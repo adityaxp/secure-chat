@@ -1,0 +1,43 @@
+export const colors = {
+  background: "#0A0D10",
+  panel: "#272728",
+  panelBorder: "#3A3A3C",
+  panelBorderSoft: "#313134",
+  panelGradientStart: "#272728",
+  panelGradientEnd: "#272728",
+  encryptedBadgeBackground: "#112B1A",
+  avatarBackground: "#000",
+  verifiedBadgeBackground: "#D7FFD4",
+  verifiedLockIcon: "#2D6B3E",
+  settingIconBackground: "#303033",
+  patternLineHorizontal: "rgba(84, 94, 109, 0.12)",
+  patternLineVertical: "rgba(74, 84, 99, 0.1)",
+  patternOverlayTint: "rgba(7, 10, 14, 0.22)",
+  textPrimary: "#E6ECEA",
+  textSecondary: "#9EA9A4",
+  textMuted: "#7A857F",
+  avatarFrameBorder: "#EBFFE2",
+  accentGreen: "#9AD36C",
+  accentGreenSoft: "#6F9A52",
+  accentBlue: "#3A72E2",
+  accentAmber: "#E6A538",
+  danger: "#E5A33E",
+  dangerBorder: "#9D7226",
+  online: "#A0E57A",
+} as const;
+
+export const typography = {
+  body: {
+    regular: "BodyRegular",
+    medium: "BodyMedium",
+    semiBold: "BodySemiBold",
+    bold: "BodyBold",
+    italic: "BodyItalic",
+  },
+  headline: {
+    regular: "HeadlineRegular",
+    medium: "HeadlineMedium",
+    semiBold: "HeadlineSemiBold",
+    bold: "HeadlineBold",
+  },
+} as const;
