@@ -21,11 +21,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { userImageXX, userImageXY } from "@/assets/images";
 import PatternBackground from "@/components/PatternBackground";
+import { startInternetNode } from "@/services/internetNode";
+import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
+import { createUserShareHash, randomEntropyHex } from "@/utils/hash";
+import { router } from "expo-router";
 
 const AVATARS = [
-  { id: "xx" as const, source: userImageXX },
-  { id: "xy" as const, source: userImageXY },
+  { id: "XX" as const, source: userImageXX },
+  { id: "XY" as const, source: userImageXY },
 ];
 
 const UPLINK_OPTIONS = [
@@ -51,9 +55,11 @@ function randomDisplayName(): string {
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const headerCursorOpacity = useSharedValue(1);
-  const [avatarIndex, setAvatarIndex] = useState(0);
-  const [displayName, setDisplayName] = useState("NODE_2SDA24");
-  const [uplink, setUplink] = useState<"internet" | "local">("local");
+  const [displayName, setDisplayName] = useState(randomDisplayName());
+  const { setUser } = useUserStore();
+  const [uplink, setUplink] = useState<"internet" | "local">("internet");
+
+  const [userType, setUserType] = useState<"XX" | "XY">("XX");
 
   React.useEffect(() => {
     headerCursorOpacity.value = withRepeat(
@@ -74,7 +80,31 @@ export default function OnboardingScreen() {
     setDisplayName(randomDisplayName());
   }, []);
 
-  const completeSetup = useCallback(() => {}, []);
+  const onCompleteSetup = async () => {
+    const entropyHex = await randomEntropyHex(16);
+    const userHash = await createUserShareHash({
+      userId: displayName,
+      userType,
+      uplinkType: uplink,
+      entropyHex,
+    });
+
+    const user = {
+      userId: displayName,
+      userType: userType,
+      uplinkType: uplink,
+      userHash: userHash,
+    };
+    setUser(user);
+
+    if (uplink === "internet") {
+      startInternetNode(user);
+    }
+
+    console.log("user created", user);
+
+    router.replace("/user");
+  };
 
   return (
     <PatternBackground patternSize={10}>
@@ -110,12 +140,12 @@ export default function OnboardingScreen() {
 
         <View style={styles.avatarRow}>
           {AVATARS.map((item, index) => {
-            const selected = index === avatarIndex;
+            const selected = userType === item.id;
             return (
               <TouchableOpacity
                 key={item.id}
                 activeOpacity={0.85}
-                onPress={() => setAvatarIndex(index)}
+                onPress={() => setUserType(item.id)}
                 style={[
                   styles.avatarTile,
                   selected && styles.avatarTileSelected,
@@ -210,7 +240,7 @@ export default function OnboardingScreen() {
 
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={completeSetup}
+          onPress={onCompleteSetup}
           style={styles.primaryButton}
         >
           <Text style={styles.primaryButtonText}>Complete Setup</Text>
