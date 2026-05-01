@@ -4,15 +4,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import {
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 
-import { userImageXY } from "@/assets/images";
+import { userImageXX, userImageXY } from "@/assets/images";
 import PatternBackground from "@/components/PatternBackground";
+import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
+import { formatHashForDisplay } from "@/utils/hash";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const settingRows = [
@@ -49,6 +52,7 @@ const settingRows = [
 
 export default function UserScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useUserStore();
 
   return (
     <PatternBackground patternSize={10}>
@@ -59,7 +63,7 @@ export default function UserScreen() {
         style={[styles.headerRow, { paddingTop: insets.top }]}
       >
         <View style={styles.headerLeft}>
-          <Text style={styles.idText}>ID: 0X4F...E21</Text>
+          <Text style={styles.idText}>ID: {user?.userId}</Text>
         </View>
         <View style={styles.encryptedBadge}>
           <Text style={styles.encryptedText}>ENCRYPTED</Text>
@@ -75,7 +79,7 @@ export default function UserScreen() {
         <View style={styles.avatarSection}>
           <View style={styles.avatarFrame}>
             <Image
-              source={userImageXY}
+              source={user?.userType === "XX" ? userImageXX : userImageXY}
               style={styles.avatar}
               contentFit="contain"
             />
@@ -87,10 +91,17 @@ export default function UserScreen() {
               color={colors.verifiedLockIcon}
             />
           </View>
-          <Text style={styles.userName}>Architect_Alpha</Text>
+          <Text style={styles.userName}>{user?.userId}</Text>
           <View style={styles.userHashRow}>
-            <Text style={styles.userHash}>0x4F82...E210</Text>
-            <TouchableOpacity onPress={() => {}}>
+            <Text style={styles.userHash}>
+              {formatHashForDisplay(user?.userHash ?? "")}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                const h = user?.userHash;
+                if (h) void Share.share({ message: h });
+              }}
+            >
               <Ionicons
                 name="arrow-redo-outline"
                 size={24}
