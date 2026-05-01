@@ -80,9 +80,9 @@ export default function OnboardingScreen() {
     setDisplayName(randomDisplayName());
   }, []);
 
-  const onCompleteSetup = async () => {
-    const entropyHex = await randomEntropyHex(16);
-    const userHash = await createUserShareHash({
+  const onCompleteSetup = () => {
+    const entropyHex = randomEntropyHex(16);
+    const userHash = createUserShareHash({
       userId: displayName,
       userType,
       uplinkType: uplink,
@@ -91,9 +91,9 @@ export default function OnboardingScreen() {
 
     const user = {
       userId: displayName,
-      userType: userType,
+      userType,
       uplinkType: uplink,
-      userHash: userHash,
+      userHash,
     };
     setUser(user);
 
