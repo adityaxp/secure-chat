@@ -1,26 +1,26 @@
-import * as Crypto from "expo-crypto";
+import { sha256 } from "js-sha256";
+import "react-native-get-random-values";
 
 /**
- * React Native does not ship Node's `crypto` module. This matches:
- * `createHash("sha256").update(data, "utf8").digest("hex")`.
+ * Pure JS SHA-256 hex (same as Node `createHash("sha256").update(data, "utf8").digest("hex")`).
+ * Avoids native modules like `expo-crypto`, which require a rebuilt dev client.
  */
-export async function createHashSha256Hex(data: string): Promise<string> {
-  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, data, {
-    encoding: Crypto.CryptoEncoding.HEX,
-  });
+export function createHashSha256Hex(data: string): string {
+  return sha256(data);
 }
 
-export async function randomEntropyHex(byteLength = 16): Promise<string> {
-  const bytes = await Crypto.getRandomBytesAsync(byteLength);
+export function randomEntropyHex(byteLength = 16): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function createUserShareHash(input: {
+export function createUserShareHash(input: {
   userId: string;
   userType: string;
   uplinkType: string;
   entropyHex: string;
-}): Promise<string> {
+}): string {
   const canonical = `${input.userId}|${input.userType}|${input.uplinkType}|${input.entropyHex}`;
   return createHashSha256Hex(canonical);
 }
