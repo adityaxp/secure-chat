@@ -24,6 +24,7 @@ export const colors = {
   danger: "#E5A33E",
   dangerBorder: "#9D7226",
   online: "#A0E57A",
+  chatBorder: "#354533",
 } as const;
 
 export const typography = {
