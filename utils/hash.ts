@@ -21,8 +21,29 @@ export function createUserShareHash(input: {
   uplinkType: string;
   entropyHex: string;
 }): string {
-  const canonical = `${input.userId}|${input.userType}|${input.uplinkType}|${input.entropyHex}`;
-  return createHashSha256Hex(canonical);
+  // TEMP (testing): random "000"–"999". Revert: remove this block and use:
+  //   const canonical = `${input.userId}|${input.userType}|${input.uplinkType}|${input.entropyHex}`;
+  //   return createHashSha256Hex(canonical);
+  void input;
+  const bytes = new Uint8Array(2);
+  crypto.getRandomValues(bytes);
+  const n = ((bytes[0] << 8) | bytes[1]) % 1000;
+  return String(n).padStart(3, "0");
+}
+
+/**
+ * Same rules as signaling `normalizeHash` for `targetHash` / `profile.userHash`.
+ * Pads 1–3 digit numeric codes to 3 digits so "42" matches "042" (testing).
+ */
+export function normalizePeerHashForLookup(raw: string): string {
+  let s = raw
+    .replace(/^0x/i, "")
+    .replace(/\s/g, "")
+    .toLowerCase();
+  if (/^\d+$/.test(s) && s.length >= 1 && s.length <= 3) {
+    s = s.padStart(3, "0");
+  }
+  return s;
 }
 
 export function formatHashForDisplay(fullHex: string): string {
