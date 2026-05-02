@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import React from "react";
+import React, { useRef } from "react";
 import {
   ScrollView,
   Share,
@@ -12,47 +12,78 @@ import {
 } from "react-native";
 
 import { userImageXX, userImageXY } from "@/assets/images";
+import BottomSheetModal from "@/components/BottomSheetModal";
+import JoinSessionSheetPanel from "@/components/JoinSessionSheetPanel";
+import SessionSheetPanel from "@/components/SessionSheetPanel";
 import PatternBackground from "@/components/PatternBackground";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
 import { formatHashForDisplay } from "@/utils/hash";
+import { TrueSheet } from "@lodev09/react-native-true-sheet";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const settingRows = [
-  {
-    label: "CREATE_JOIN_SESSION",
-    value: "Start new or connect a session",
-    icon: "account-multiple-plus-outline",
-    iconLib: "mc",
-    type: "chevron",
-  },
-  {
-    label: "ENCRYPTION_KEYS",
-    value: "Manage RSA/Ed25519 pairs",
-    icon: "key-variant",
-    iconLib: "mc",
-    type: "chevron",
-  },
-  {
-    label: "PREVIOUS_SESSIONS",
-    value: "Review recent sessions",
-    icon: "history",
-    iconLib: "mc",
-    type: "chevron",
-  },
-
-  {
-    label: "UI_THEME",
-    value: "Current: Terminal P2P (Green Phosphor)",
-    icon: "palette-outline",
-    iconLib: "mc",
-    type: "chevron",
-  },
-] as const;
 
 export default function UserScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUserStore();
+  const sessionSheetRef = useRef<TrueSheet | null>(null);
+  const joinSessionSheetRef = useRef<TrueSheet | null>(null);
+
+  const openSessionSheet = React.useCallback(() => {
+    void sessionSheetRef.current?.present();
+  }, []);
+
+  const goToChatFromSheet = React.useCallback(() => {
+    void sessionSheetRef.current?.dismiss();
+    router.push({ pathname: "/chat", params: { role: "host" } });
+  }, []);
+
+  const openJoinSessionSheet = React.useCallback(async () => {
+    await sessionSheetRef.current?.dismiss();
+    await joinSessionSheetRef.current?.present();
+  }, []);
+
+  const joinWithPeerHash = React.useCallback((peerHash: string) => {
+    if (!peerHash) return;
+    void joinSessionSheetRef.current?.dismiss();
+    router.push({ pathname: "/chat", params: { peerHash } });
+  }, []);
+
+  const settingRows = [
+    {
+      label: "CREATE_JOIN_SESSION",
+      value: "Start new or connect a session",
+      icon: "account-multiple-plus-outline",
+      iconLib: "mc",
+      type: "chevron",
+      onPress: openSessionSheet,
+    },
+    {
+      label: "ENCRYPTION_KEYS",
+      value: "Manage RSA/Ed25519 pairs",
+      icon: "key-variant",
+      iconLib: "mc",
+      type: "chevron",
+      onPress: () => {},
+    },
+    {
+      label: "PREVIOUS_SESSIONS",
+      value: "Review recent sessions",
+      icon: "history",
+      iconLib: "mc",
+      type: "chevron",
+      onPress: () => {},
+    },
+
+    {
+      label: "UI_THEME",
+      value: "Current: Terminal P2P (Green Phosphor)",
+      icon: "palette-outline",
+      iconLib: "mc",
+      type: "chevron",
+      onPress: () => {},
+    },
+  ] as const;
 
   return (
     <PatternBackground patternSize={10}>
@@ -143,12 +174,13 @@ export default function UserScreen() {
             style={styles.settingsGroup}
           >
             {settingRows.map((item, index, arr) => (
-              <View
+              <TouchableOpacity
                 key={item.label}
                 style={[
                   styles.settingRow,
                   index === arr.length - 1 && styles.lastRow,
                 ]}
+                onPress={item.onPress}
               >
                 <View style={styles.settingIconWrap}>
                   <MaterialCommunityIcons
@@ -167,7 +199,7 @@ export default function UserScreen() {
                   size={18}
                   color={colors.textSecondary}
                 />
-              </View>
+              </TouchableOpacity>
             ))}
           </LinearGradient>
 
@@ -185,6 +217,21 @@ export default function UserScreen() {
           </Text>
         </View>
       </ScrollView>
+      <BottomSheetModal
+        bottomSheetRef={sessionSheetRef}
+        detents={[0.48, 0.78]}
+      >
+        <SessionSheetPanel
+          onCreateSession={goToChatFromSheet}
+          onJoinSession={openJoinSessionSheet}
+        />
+      </BottomSheetModal>
+      <BottomSheetModal
+        bottomSheetRef={joinSessionSheetRef}
+        detents={[0.35, 0.55]}
+      >
+        <JoinSessionSheetPanel onJoin={joinWithPeerHash} />
+      </BottomSheetModal>
     </PatternBackground>
   );
 }
