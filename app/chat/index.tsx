@@ -2,7 +2,7 @@ import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
@@ -28,6 +28,7 @@ import {
 } from "@/services/chatSession";
 import type { ChatConnectionStatus } from "@/store/ChatSessionStore";
 import { useChatSessionStore } from "@/store/ChatSessionStore";
+import { useLastChatRouteStore } from "@/store/LastChatRouteStore";
 import type { User } from "@/store/UserStore";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
@@ -44,9 +45,9 @@ const COMMAND_SUGGESTIONS = [
     label: "ATTACH DATA",
   },
   {
-    key: "/link",
-    icon: "link-outline" as const,
-    label: "SHARE LINK",
+    key: "/disconnect",
+    icon: "exit-outline" as const,
+    label: "DISCONNECT",
   },
 ] as const;
 
@@ -87,10 +88,12 @@ export default function ChatScreen() {
 
   const scrollRef = React.useRef<ScrollView>(null);
   const [messageInput, setMessageInput] = React.useState("");
+  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
   const cursorOpacity = useSharedValue(1);
   const commandTokenMatch = messageInput.match(/(?:^|\s)(\/[^\s]*)$/);
   const commandQuery = commandTokenMatch?.[1] ?? "";
   const showCommandSuggestions = commandQuery.length > 0;
+  const [showCommands, setShowCommands] = React.useState(false);
   const filteredSuggestions = COMMAND_SUGGESTIONS.filter((item) =>
     item.key.startsWith(commandQuery.toLowerCase()),
   );
@@ -125,13 +128,18 @@ export default function ChatScreen() {
           : undefined;
     const rawRole = params.role;
     const isHost =
-      rawRole === "host" ||
-      (Array.isArray(rawRole) && rawRole[0] === "host");
+      rawRole === "host" || (Array.isArray(rawRole) && rawRole[0] === "host");
 
     if (!peerHash && !isHost) {
       router.replace("/user");
       return;
     }
+
+    useLastChatRouteStore
+      .getState()
+      .setLastChatRoute(
+        peerHash ? { role: "join", peerHash } : { role: "host" },
+      );
 
     startChatSession({
       user: user as User,
@@ -148,18 +156,64 @@ export default function ChatScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages.length]);
 
+  React.useEffect(() => {
+    const showEvt =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const subShow = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (keyboardHeight <= 0) return;
+    const id = requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [keyboardHeight]);
+
   const sendFromInput = React.useCallback(() => {
+    const trimmed = messageInput.trim();
+    if (!trimmed) return;
+
+    if (trimmed.toLowerCase() === "/disconnect") {
+      sendChatMessage(trimmed);
+      setMessageInput("");
+      setTimeout(() => {
+        stopChatSession();
+        useLastChatRouteStore.getState().setLastChatRoute(null);
+        router.replace("/splash");
+      }, 160);
+      Keyboard.dismiss();
+
+      return;
+    }
+
     sendChatMessage(messageInput);
     setMessageInput("");
+    Keyboard.dismiss();
   }, [messageInput]);
+
+  const keyboardGap = 20;
+  const composerBottomGap =
+    keyboardHeight > 0 ? keyboardHeight + keyboardGap : insets.bottom + 8;
+  const suggestionsBottom =
+    (keyboardHeight > 0 ? keyboardHeight + keyboardGap : insets.bottom) + 72;
 
   return (
     <PatternBackground patternSize={10}>
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
-      >
+      <View style={styles.root}>
         <View style={styles.rootContent}>
           <View
             style={[
@@ -227,40 +281,43 @@ export default function ChatScreen() {
             </Text>
           </View>
 
-          <ScrollView
-            ref={scrollRef}
-            style={styles.logScroll}
-            contentContainerStyle={styles.logContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {messages.map((item) => (
-              <View key={item.id} style={styles.messageBlock}>
-                <View style={styles.messageMetaRow}>
-                  <Text style={styles.timeText}>[{item.at}]</Text>
-                  <Text
-                    style={[
-                      styles.senderText,
-                      item.senderLabel === "SYSTEM" && styles.senderSystem,
-                    ]}
-                  >
-                    {item.senderLabel}
-                  </Text>
-                  {item.outgoing ? (
-                    <Text style={styles.metaText}>OUT</Text>
-                  ) : item.senderLabel !== "SYSTEM" ? (
-                    <Text style={styles.metaText}>IN</Text>
-                  ) : null}
+          <View style={styles.logSection}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.logScroll}
+              contentContainerStyle={styles.logContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {messages.map((item) => (
+                <View key={item.id} style={styles.messageBlock}>
+                  <View style={styles.messageMetaRow}>
+                    <Text style={styles.timeText}>[{item.at}]</Text>
+                    <Text
+                      style={[
+                        styles.senderText,
+                        item.senderLabel === "SYSTEM" && styles.senderSystem,
+                      ]}
+                    >
+                      {item.senderLabel}
+                    </Text>
+                    {item.outgoing ? (
+                      <Text style={styles.metaText}>OUT</Text>
+                    ) : item.senderLabel !== "SYSTEM" ? (
+                      <Text style={styles.metaText}>IN</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.messageBody}>{item.body}</Text>
                 </View>
-                <Text style={styles.messageBody}>{item.body}</Text>
-              </View>
-            ))}
-          </ScrollView>
+              ))}
+            </ScrollView>
+          </View>
 
-          {showCommandSuggestions ? (
+          {showCommandSuggestions || showCommands ? (
             <View
               style={[
                 styles.commandSuggestionsCard,
-                { bottom: insets.bottom + 68 },
+                { bottom: suggestionsBottom },
               ]}
             >
               <Text style={styles.commandSuggestionsTitle}>
@@ -299,39 +356,48 @@ export default function ChatScreen() {
           ) : null}
 
           <View
-            style={[styles.inputBar, { marginBottom: insets.bottom + 8 }]}
+            style={[styles.composerWrap, { marginBottom: composerBottomGap }]}
           >
-            <Text style={styles.promptMark}>{">"}</Text>
-            <TextInput
-              value={messageInput}
-              onChangeText={setMessageInput}
-              style={styles.inputPlaceholder}
-              placeholder="ENTER COMMAND OR MESSAGE ..."
-              placeholderTextColor="#666C68"
-              autoCapitalize="none"
-              autoCorrect={false}
-              onSubmitEditing={sendFromInput}
-              returnKeyType="send"
-            />
-            <Ionicons
-              name="code-slash-outline"
-              size={16}
-              color={colors.textSecondary}
-            />
-            <TouchableOpacity
-              onPress={sendFromInput}
-              hitSlop={10}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name="send-outline"
-                size={17}
-                color={colors.textSecondary}
+            <View style={styles.inputBar}>
+              <Text style={styles.promptMark}>{">"}</Text>
+              <TextInput
+                value={messageInput}
+                onChangeText={setMessageInput}
+                style={styles.inputPlaceholder}
+                placeholder="ENTER COMMAND OR MESSAGE ..."
+                placeholderTextColor="#666C68"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onSubmitEditing={sendFromInput}
+                returnKeyType="send"
               />
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setShowCommands(!showCommands);
+                }}
+              >
+                <Ionicons
+                  name="code-slash-outline"
+                  size={16}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={sendFromInput}
+                hitSlop={10}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="send-outline"
+                  size={17}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </PatternBackground>
   );
 }
@@ -342,7 +408,15 @@ const styles = StyleSheet.create({
   },
   rootContent: {
     flex: 1,
+    minHeight: 0,
     zIndex: 1,
+  },
+  composerWrap: {
+    flexShrink: 0,
+  },
+  logSection: {
+    flex: 1,
+    minHeight: 0,
   },
   header: {
     minHeight: 50,
@@ -449,6 +523,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: 12,
     paddingHorizontal: 16,
+    minHeight: 0,
   },
   logContent: {
     paddingLeft: 8,

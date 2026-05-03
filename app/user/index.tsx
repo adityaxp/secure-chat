@@ -16,6 +16,7 @@ import BottomSheetModal from "@/components/BottomSheetModal";
 import JoinSessionSheetPanel from "@/components/JoinSessionSheetPanel";
 import SessionSheetPanel from "@/components/SessionSheetPanel";
 import PatternBackground from "@/components/PatternBackground";
+import { useLastChatRouteStore } from "@/store/LastChatRouteStore";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
 import { formatHashForDisplay } from "@/utils/hash";
@@ -26,8 +27,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function UserScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUserStore();
+  const lastChatRoute = useLastChatRouteStore((s) => s.lastChatRoute);
   const sessionSheetRef = useRef<TrueSheet | null>(null);
   const joinSessionSheetRef = useRef<TrueSheet | null>(null);
+
+  const roomCodeLabel = React.useMemo(() => {
+    if (lastChatRoute?.role === "join" && lastChatRoute.peerHash) {
+      return lastChatRoute.peerHash;
+    }
+    return user?.userId ?? "—";
+  }, [lastChatRoute, user?.userId]);
+
+  const openLastOrHostChat = React.useCallback(() => {
+    const r = useLastChatRouteStore.getState().lastChatRoute;
+    if (r?.role === "join" && r.peerHash) {
+      router.push({ pathname: "/chat", params: { peerHash: r.peerHash } });
+      return;
+    }
+    router.push({ pathname: "/chat", params: { role: "host" } });
+  }, []);
 
   const openSessionSheet = React.useCallback(() => {
     void sessionSheetRef.current?.present();
@@ -142,29 +160,48 @@ export default function UserScreen() {
           </View>
         </View>
         <View style={styles.userInfoContainer}>
-          <LinearGradient
-            colors={[colors.panelGradientStart, colors.panelGradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.nodeCard}
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={openLastOrHostChat}
+            accessibilityRole="button"
+            accessibilityLabel="Open P2P chat session"
           >
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            <LinearGradient
+              colors={[colors.panelGradientStart, colors.panelGradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.nodeCard}
             >
-              <MaterialCommunityIcons
-                name="source-branch"
-                size={14}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.nodeText}>NODE: P2P_ROOM_CODE</Text>
-            </View>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-            >
-              <View style={styles.statusDot} />
-              <Text style={styles.activeText}>ACTIVE</Text>
-            </View>
-          </LinearGradient>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="source-branch"
+                  size={14}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={styles.nodeText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  NODE: {roomCodeLabel}
+                </Text>
+              </View>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
+                <View style={styles.statusDot} />
+                <Text style={styles.activeText}>ACTIVE</Text>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
 
           <Text style={styles.sectionLabel}>SECURITY & INFRASTRUCTURE</Text>
           <LinearGradient
