@@ -7,7 +7,9 @@ import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
   Keyboard,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +33,7 @@ import {
   startChatSession,
   stopChatSession,
 } from "@/services/chatSession";
+import { useChatE2eStore } from "@/store/ChatE2eStore";
 import type {
   ChatConnectionStatus,
   ChatLine,
@@ -40,6 +43,7 @@ import { useLastChatRouteStore } from "@/store/LastChatRouteStore";
 import type { User } from "@/store/UserStore";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
+import { formatSessionFingerprint } from "@/utils/chatE2e";
 import { saveBase64ToCacheAndShare } from "@/utils/saveChatFile";
 
 const COMMAND_SUGGESTIONS = [
@@ -103,6 +107,23 @@ export default function ChatScreen() {
   const commandQuery = commandTokenMatch?.[1] ?? "";
   const showCommandSuggestions = commandQuery.length > 0;
   const [showCommands, setShowCommands] = React.useState(false);
+  const [e2eModalOpen, setE2eModalOpen] = React.useState(false);
+  const [e2ePassphraseInput, setE2ePassphraseInput] = React.useState("");
+  const e2eKeyBytes = useChatE2eStore((s) => s.key);
+  const e2eKeyActive = e2eKeyBytes !== null;
+  const sessionFingerprint = React.useMemo(() => {
+    if (!e2eKeyBytes || !user?.userId || !remotePeerId?.trim()) return null;
+    return formatSessionFingerprint(
+      e2eKeyBytes,
+      user.userId,
+      remotePeerId.trim(),
+    );
+  }, [e2eKeyBytes, user?.userId, remotePeerId]);
+  const canApplyE2e = Boolean(
+    user?.userId &&
+      remotePeerId?.trim() &&
+      e2ePassphraseInput.trim().length >= 6,
+  );
   const filteredSuggestions = COMMAND_SUGGESTIONS.filter((item) =>
     item.key.startsWith(commandQuery.toLowerCase()),
   );
@@ -199,6 +220,19 @@ export default function ChatScreen() {
       outgoing: false,
     });
   }, []);
+
+  const prevRemotePeerIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const r = remotePeerId?.trim() ?? null;
+    const prev = prevRemotePeerIdRef.current;
+    if (prev && r && prev !== r && useChatE2eStore.getState().key) {
+      useChatE2eStore.getState().clearKey();
+      appendSystem(
+        "Remote peer identity changed; session encryption key cleared. Re-apply passphrase if needed.",
+      );
+    }
+    prevRemotePeerIdRef.current = r;
+  }, [remotePeerId, appendSystem]);
 
   const downloadChatFile = React.useCallback(
     async (item: ChatLine) => {
@@ -311,6 +345,7 @@ export default function ChatScreen() {
       setTimeout(() => {
         stopChatSession();
         useLastChatRouteStore.getState().setLastChatRoute(null);
+        useChatE2eStore.getState().clearKey();
         router.replace("/splash");
       }, 160);
       Keyboard.dismiss();
@@ -376,6 +411,20 @@ export default function ChatScreen() {
               <TouchableOpacity
                 style={styles.syncButton}
                 activeOpacity={0.8}
+                onPress={() => setE2eModalOpen(true)}
+                accessibilityLabel="End-to-end encryption passphrase"
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={
+                    e2eKeyActive ? colors.accentGreen : colors.textSecondary
+                  }
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.syncButton}
+                activeOpacity={0.8}
                 onPress={() => {
                   router.push("/user");
                 }}
@@ -397,6 +446,12 @@ export default function ChatScreen() {
                   ? `PEER :: ${remotePeerId}\n${statusBannerLabel(connectionStatus)}`
                   : statusBannerLabel(connectionStatus)}
             </Text>
+            {sessionFingerprint ? (
+              <Text
+                style={styles.sessionFingerprintBanner}
+                selectable
+              >{`SESSION FP :: ${sessionFingerprint}`}</Text>
+            ) : null}
           </View>
 
           <View style={styles.logSection}>
@@ -580,6 +635,98 @@ export default function ChatScreen() {
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={e2eModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setE2eModalOpen(false)}
+      >
+        <View style={styles.e2eOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setE2eModalOpen(false)}
+          />
+          <View style={styles.e2eCard}>
+            <Text style={styles.e2eTitle}>END-TO-END (AES-256-GCM)</Text>
+            <Text style={styles.e2eHint}>
+              Same passphrase on both peers. PBKDF2 (80k iter) uses a salt bound
+              to your two node IDs (no extra secret on the wire). Compare the
+              session fingerprint with your peer out-of-band before trusting.
+            </Text>
+            {!remotePeerId?.trim() ? (
+              <Text style={styles.e2eWarn}>
+                Waiting for peer ID — APPLY stays disabled until the pair is
+                known (host: when a peer joins; join: after lookup).
+              </Text>
+            ) : null}
+            {sessionFingerprint ? (
+              <Text style={styles.e2eFingerprint} selectable>
+                {`SESSION FP :: ${sessionFingerprint}`}
+              </Text>
+            ) : null}
+            <TextInput
+              value={e2ePassphraseInput}
+              onChangeText={setE2ePassphraseInput}
+              style={styles.e2eInput}
+              placeholder="Passphrase (min 6 characters)"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.e2eActions}>
+              <TouchableOpacity
+                style={styles.e2eBtnSecondary}
+                onPress={() => {
+                  useChatE2eStore.getState().clearKey();
+                  setE2ePassphraseInput("");
+                  setE2eModalOpen(false);
+                  appendSystem("E2E encryption cleared for this device.");
+                }}
+              >
+                <Text style={styles.e2eBtnSecondaryText}>CLEAR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.e2eBtnPrimary,
+                  !canApplyE2e && styles.e2eBtnPrimaryDisabled,
+                ]}
+                disabled={!canApplyE2e}
+                onPress={() => {
+                  const p = e2ePassphraseInput.trim();
+                  const uid = user?.userId;
+                  const rid = remotePeerId?.trim();
+                  if (p.length < 6) {
+                    appendSystem("Passphrase must be at least 6 characters.");
+                    return;
+                  }
+                  if (!uid || !rid) {
+                    appendSystem(
+                      "Peer ID is not set yet; wait for the session pair, then apply.",
+                    );
+                    return;
+                  }
+                  useChatE2eStore.getState().setPassphrase(p, uid, rid);
+                  setE2ePassphraseInput("");
+                  setE2eModalOpen(false);
+                  appendSystem(
+                    "AES-GCM active: new messages and attachments are encrypted for this session link.",
+                  );
+                }}
+              >
+                <Text style={styles.e2eBtnPrimaryText}>APPLY</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.e2eClose}
+              onPress={() => setE2eModalOpen(false)}
+            >
+              <Text style={styles.e2eCloseText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </PatternBackground>
   );
 }
@@ -700,6 +847,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: "uppercase",
     lineHeight: 20,
+  },
+  sessionFingerprintBanner: {
+    marginTop: 10,
+    fontFamily: typography.body.medium,
+    color: colors.accentGreenSoft,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    lineHeight: 16,
   },
   logScroll: {
     flex: 1,
@@ -874,5 +1029,110 @@ const styles = StyleSheet.create({
     color: "#B8C5B4",
     fontSize: 9,
     letterSpacing: 0.6,
+  },
+  e2eOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    paddingHorizontal: 20,
+  },
+  e2eCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: colors.chatBorder,
+    borderRadius: 12,
+    backgroundColor: "rgba(18, 22, 20, 0.96)",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  e2eTitle: {
+    fontFamily: typography.headline.semiBold,
+    fontSize: 13,
+    letterSpacing: 1.2,
+    color: colors.accentGreenSoft,
+    marginBottom: 8,
+  },
+  e2eHint: {
+    fontFamily: typography.body.regular,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+    marginBottom: 10,
+  },
+  e2eWarn: {
+    fontFamily: typography.body.medium,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#C9A227",
+    marginBottom: 10,
+  },
+  e2eFingerprint: {
+    fontFamily: typography.body.medium,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.accentGreenSoft,
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  e2eInput: {
+    borderWidth: 1,
+    borderColor: colors.chatBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontFamily: typography.body.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 14,
+    backgroundColor: "rgba(16, 16, 16, 0.55)",
+  },
+  e2eActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginBottom: 8,
+  },
+  e2eBtnPrimary: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.accentGreenSoft,
+    backgroundColor: colors.encryptedBadgeBackground,
+  },
+  e2eBtnPrimaryDisabled: {
+    opacity: 0.45,
+  },
+  e2eBtnPrimaryText: {
+    fontFamily: typography.headline.semiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: colors.accentGreen,
+  },
+  e2eBtnSecondary: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.chatBorder,
+  },
+  e2eBtnSecondaryText: {
+    fontFamily: typography.headline.medium,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    color: colors.textSecondary,
+  },
+  e2eClose: {
+    alignSelf: "center",
+    paddingVertical: 6,
+  },
+  e2eCloseText: {
+    fontFamily: typography.headline.medium,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: colors.textMuted,
   },
 });
