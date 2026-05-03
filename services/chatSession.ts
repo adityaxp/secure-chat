@@ -5,6 +5,12 @@ import {
 } from "@/store/ChatSessionStore";
 
 import { normalizePeerHashForLookup } from "@/utils/hash";
+import { useChatE2eStore } from "@/store/ChatE2eStore";
+import {
+  decryptTransport,
+  encryptTransport,
+  looksLikeE2ePayload,
+} from "@/utils/chatE2e";
 import {
   MAX_ATTACHMENT_BYTES,
   buildAttachmentWire,
@@ -203,9 +209,61 @@ export class ChatSession {
     });
   }
 
+  private unwrapChannelPayload(raw: string):
+    | { ok: true; data: string }
+    | { ok: false; error: string } {
+    const key = useChatE2eStore.getState().key;
+    if (!key) {
+      if (looksLikeE2ePayload(raw)) {
+        return {
+          ok: false,
+          error:
+            "Peer is using end-to-end encryption. Tap the lock and enter the same passphrase.",
+        };
+      }
+      return { ok: true, data: raw };
+    }
+    if (!looksLikeE2ePayload(raw)) {
+      return { ok: true, data: raw };
+    }
+    const dec = decryptTransport(raw.trim(), key);
+    if (dec === null) {
+      return {
+        ok: false,
+        error:
+          "Could not decrypt. Your passphrase must match your peer's exactly.",
+      };
+    }
+    return { ok: true, data: dec };
+  }
+
+  private wrapOutgoing(data: string): string {
+    const key = useChatE2eStore.getState().key;
+    if (!key) return data;
+    try {
+      return encryptTransport(data, key);
+    } catch {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: "SYSTEM",
+        body: "E2E encryption failed; message sent without E2E wrap.",
+        outgoing: false,
+      });
+      return data;
+    }
+  }
+
   private appendIncomingChat(text: string) {
     const label = this.remotePeerId ?? "PEER";
-    const parsed = parseDataChannelPayload(text);
+    const unwrapped = this.unwrapChannelPayload(text);
+    if (!unwrapped.ok) {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: "SYSTEM",
+        body: unwrapped.error,
+        outgoing: false,
+      });
+      return;
+    }
+    const parsed = parseDataChannelPayload(unwrapped.data);
 
     if (parsed.type === "text") {
       useChatSessionStore.getState().appendMessage({
@@ -253,7 +311,7 @@ export class ChatSession {
       messageKind: "text",
     });
 
-    this.webrtc?.send(trimmed);
+    this.webrtc?.send(this.wrapOutgoing(trimmed));
   }
 
   sendAttachment(payload: {
@@ -302,7 +360,7 @@ export class ChatSession {
         payload.kind === "file" ? payload.base64 : undefined,
     });
 
-    this.webrtc?.send(wire);
+    this.webrtc?.send(this.wrapOutgoing(wire));
   }
 
   private scheduleLookupTimeout() {
