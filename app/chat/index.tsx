@@ -1,4 +1,8 @@
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
@@ -22,16 +26,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import PatternBackground from "@/components/PatternBackground";
 import {
+  sendChatAttachment,
   sendChatMessage,
   startChatSession,
   stopChatSession,
 } from "@/services/chatSession";
-import type { ChatConnectionStatus } from "@/store/ChatSessionStore";
+import type {
+  ChatConnectionStatus,
+  ChatLine,
+} from "@/store/ChatSessionStore";
 import { useChatSessionStore } from "@/store/ChatSessionStore";
 import { useLastChatRouteStore } from "@/store/LastChatRouteStore";
 import type { User } from "@/store/UserStore";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
+import { saveBase64ToCacheAndShare } from "@/utils/saveChatFile";
 
 const COMMAND_SUGGESTIONS = [
   {
@@ -183,9 +192,118 @@ export default function ChatScreen() {
     return () => cancelAnimationFrame(id);
   }, [keyboardHeight]);
 
+  const appendSystem = React.useCallback((body: string) => {
+    useChatSessionStore.getState().appendMessage({
+      senderLabel: "SYSTEM",
+      body,
+      outgoing: false,
+    });
+  }, []);
+
+  const downloadChatFile = React.useCallback(
+    async (item: ChatLine) => {
+      if (!item.attachmentBase64) return;
+      try {
+        await saveBase64ToCacheAndShare({
+          base64: item.attachmentBase64,
+          displayName: item.attachmentName ?? item.body ?? "file",
+          mime: item.mime,
+        });
+      } catch {
+        appendSystem("Could not save or share the file.");
+      }
+    },
+    [appendSystem],
+  );
+
+  const pickAndSendImage = React.useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        appendSystem("Allow photo library access to attach images.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.82,
+        base64: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      let b64 = asset.base64 ?? null;
+      if (!b64 && asset.uri) {
+        b64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: "base64",
+        });
+      }
+      if (!b64) {
+        appendSystem("Could not read the selected image.");
+        return;
+      }
+
+      const mime = asset.mimeType ?? "image/jpeg";
+      const ext = mime.includes("png")
+        ? "png"
+        : mime.includes("webp")
+          ? "webp"
+          : mime.includes("gif")
+            ? "gif"
+            : "jpg";
+      const name =
+        asset.fileName ?? `image_${Date.now()}.${ext}`;
+
+      sendChatAttachment({
+        kind: "image",
+        mime,
+        name,
+        base64: b64,
+        localUri: asset.uri,
+      });
+    } catch {
+      appendSystem("Image picker failed.");
+    }
+  }, [appendSystem]);
+
+  const pickAndSendFile = React.useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: "base64",
+      });
+      sendChatAttachment({
+        kind: "file",
+        mime: asset.mimeType ?? "application/octet-stream",
+        name: asset.name || "file",
+        base64: b64,
+      });
+    } catch {
+      appendSystem("File picker failed.");
+    }
+  }, [appendSystem]);
+
   const sendFromInput = React.useCallback(() => {
     const trimmed = messageInput.trim();
     if (!trimmed) return;
+
+    const lower = trimmed.toLowerCase();
+    if (lower === "/image") {
+      setMessageInput("");
+      void pickAndSendImage();
+      return;
+    }
+    if (lower === "/file") {
+      setMessageInput("");
+      void pickAndSendFile();
+      return;
+    }
 
     if (trimmed.toLowerCase() === "/disconnect") {
       sendChatMessage(trimmed);
@@ -203,7 +321,7 @@ export default function ChatScreen() {
     sendChatMessage(messageInput);
     setMessageInput("");
     Keyboard.dismiss();
-  }, [messageInput]);
+  }, [messageInput, pickAndSendFile, pickAndSendImage]);
 
   const keyboardGap = 20;
   const composerBottomGap =
@@ -289,27 +407,81 @@ export default function ChatScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {messages.map((item) => (
-                <View key={item.id} style={styles.messageBlock}>
-                  <View style={styles.messageMetaRow}>
-                    <Text style={styles.timeText}>[{item.at}]</Text>
-                    <Text
-                      style={[
-                        styles.senderText,
-                        item.senderLabel === "SYSTEM" && styles.senderSystem,
-                      ]}
-                    >
-                      {item.senderLabel}
-                    </Text>
-                    {item.outgoing ? (
-                      <Text style={styles.metaText}>OUT</Text>
-                    ) : item.senderLabel !== "SYSTEM" ? (
-                      <Text style={styles.metaText}>IN</Text>
-                    ) : null}
+              {messages.map((item) => {
+                const showImage =
+                  item.messageKind === "image" && Boolean(item.mediaUri);
+                const showFile = item.messageKind === "file";
+                return (
+                  <View key={item.id} style={styles.messageBlock}>
+                    <View style={styles.messageMetaRow}>
+                      <Text style={styles.timeText}>[{item.at}]</Text>
+                      <Text
+                        style={[
+                          styles.senderText,
+                          item.senderLabel === "SYSTEM" && styles.senderSystem,
+                        ]}
+                      >
+                        {item.senderLabel}
+                      </Text>
+                      {item.outgoing ? (
+                        <Text style={styles.metaText}>OUT</Text>
+                      ) : item.senderLabel !== "SYSTEM" ? (
+                        <Text style={styles.metaText}>IN</Text>
+                      ) : null}
+                    </View>
+                    {showImage && item.mediaUri ? (
+                      <Image
+                        source={{ uri: item.mediaUri }}
+                        style={styles.chatImage}
+                        contentFit="cover"
+                        accessibilityLabel={item.attachmentName ?? "Image"}
+                      />
+                    ) : showFile ? (
+                      <View style={styles.fileCard}>
+                        <Ionicons
+                          name="document-attach-outline"
+                          size={22}
+                          color={colors.textSecondary}
+                        />
+                        <View style={styles.fileInfo}>
+                          <Text style={styles.fileName} numberOfLines={2}>
+                            {item.attachmentName ?? item.body}
+                          </Text>
+                          {item.mime ? (
+                            <Text style={styles.fileMeta} numberOfLines={1}>
+                              {item.mime}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity
+                          style={[
+                            styles.fileDownloadBtn,
+                            !item.attachmentBase64 &&
+                              styles.fileDownloadBtnDisabled,
+                          ]}
+                          disabled={!item.attachmentBase64}
+                          accessibilityLabel="Download or share file"
+                          hitSlop={8}
+                          activeOpacity={0.75}
+                          onPress={() => void downloadChatFile(item)}
+                        >
+                          <Ionicons
+                            name="download-outline"
+                            size={22}
+                            color={
+                              item.attachmentBase64
+                                ? colors.accentGreen
+                                : colors.textMuted
+                            }
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <Text style={styles.messageBody}>{item.body}</Text>
+                    )}
                   </View>
-                  <Text style={styles.messageBody}>{item.body}</Text>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           </View>
 
@@ -331,15 +503,25 @@ export default function ChatScreen() {
                   key={item.key}
                   style={styles.commandSuggestionRow}
                   activeOpacity={0.85}
-                  onPress={() =>
+                  onPress={() => {
+                    if (item.key === "/image") {
+                      setShowCommands(false);
+                      void pickAndSendImage();
+                      return;
+                    }
+                    if (item.key === "/file") {
+                      setShowCommands(false);
+                      void pickAndSendFile();
+                      return;
+                    }
                     setMessageInput(
                       messageInput.replace(
                         /(^|\s)\/[^\s]*$/,
                         (_full, leadingSpace: string) =>
                           `${leadingSpace}${item.key} `,
                       ),
-                    )
-                  }
+                    );
+                  }}
                 >
                   <Ionicons
                     name={item.icon}
@@ -568,7 +750,18 @@ const styles = StyleSheet.create({
     marginTop: 5,
     paddingRight: 8,
   },
+  chatImage: {
+    marginTop: 8,
+    height: 180,
+    width: "100%",
+    maxWidth: 280,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.chatBorder,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
   fileCard: {
+    marginTop: 8,
     borderWidth: 1,
     borderColor: colors.chatBorder,
     borderRadius: 10,
@@ -579,8 +772,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  fileDownloadBtn: {
+    padding: 8,
+    marginLeft: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.chatBorder,
+    backgroundColor: "rgba(17, 43, 26, 0.45)",
+  },
+  fileDownloadBtnDisabled: {
+    opacity: 0.4,
+  },
   fileInfo: {
     flex: 1,
+    minWidth: 0,
   },
   fileName: {
     fontFamily: typography.headline.medium,
