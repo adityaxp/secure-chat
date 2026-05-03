@@ -5,6 +5,12 @@ import {
 } from "@/store/ChatSessionStore";
 
 import { normalizePeerHashForLookup } from "@/utils/hash";
+import {
+  MAX_ATTACHMENT_BYTES,
+  buildAttachmentWire,
+  estimateBytesFromBase64,
+  parseDataChannelPayload,
+} from "@/utils/chatWire";
 
 import { getSignalingWsUrl } from "./env";
 import { stopInternetNode } from "./internetNode";
@@ -199,10 +205,39 @@ export class ChatSession {
 
   private appendIncomingChat(text: string) {
     const label = this.remotePeerId ?? "PEER";
+    const parsed = parseDataChannelPayload(text);
+
+    if (parsed.type === "text") {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: label,
+        body: parsed.text,
+        outgoing: false,
+        messageKind: "text",
+      });
+      return;
+    }
+
+    const a = parsed.attachment;
+    const bytes = estimateBytesFromBase64(a.base64);
+    if (bytes > MAX_ATTACHMENT_BYTES) {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: "SYSTEM",
+        body: "Peer sent an attachment over the size limit; ignored.",
+        outgoing: false,
+      });
+      return;
+    }
+
+    const dataUri = `data:${a.mime};base64,${a.base64}`;
     useChatSessionStore.getState().appendMessage({
       senderLabel: label,
-      body: text,
+      body: a.name,
       outgoing: false,
+      messageKind: a.kind,
+      mime: a.mime,
+      attachmentName: a.name,
+      mediaUri: a.kind === "image" ? dataUri : undefined,
+      attachmentBase64: a.kind === "file" ? a.base64 : undefined,
     });
   }
 
@@ -215,9 +250,59 @@ export class ChatSession {
       body: trimmed,
       outgoing: true,
       at: chatTimestamp(),
+      messageKind: "text",
     });
 
     this.webrtc?.send(trimmed);
+  }
+
+  sendAttachment(payload: {
+    kind: "image" | "file";
+    mime: string;
+    name: string;
+    base64: string;
+    localUri?: string;
+  }) {
+    const bytes = estimateBytesFromBase64(payload.base64);
+    if (bytes > MAX_ATTACHMENT_BYTES) {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: "SYSTEM",
+        body: "Attachment too large (max ~1.7 MB file size).",
+        outgoing: false,
+      });
+      return;
+    }
+
+    const wire = buildAttachmentWire({
+      kind: payload.kind,
+      mime: payload.mime,
+      name: payload.name,
+      base64: payload.base64,
+    });
+
+    if (wire.length > 4_000_000) {
+      useChatSessionStore.getState().appendMessage({
+        senderLabel: "SYSTEM",
+        body: "Attachment too large to transmit.",
+        outgoing: false,
+      });
+      return;
+    }
+
+    useChatSessionStore.getState().appendMessage({
+      senderLabel: this.user.userId,
+      body: payload.name,
+      outgoing: true,
+      at: chatTimestamp(),
+      messageKind: payload.kind,
+      mime: payload.mime,
+      attachmentName: payload.name,
+      mediaUri: payload.localUri,
+      attachmentBase64:
+        payload.kind === "file" ? payload.base64 : undefined,
+    });
+
+    this.webrtc?.send(wire);
   }
 
   private scheduleLookupTimeout() {
@@ -285,4 +370,14 @@ export function stopChatSession() {
 
 export function sendChatMessage(text: string) {
   activeSession?.send(text);
+}
+
+export function sendChatAttachment(payload: {
+  kind: "image" | "file";
+  mime: string;
+  name: string;
+  base64: string;
+  localUri?: string;
+}) {
+  activeSession?.sendAttachment(payload);
 }
