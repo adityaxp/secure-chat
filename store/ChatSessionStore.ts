@@ -1,11 +1,21 @@
 import { create } from "zustand";
 
+export type ChatMessageType = "text" | "image" | "file";
+
 export type ChatLine = {
   id: string;
   at: string;
   senderLabel: string;
+  /** Plain text, or filename/caption summary for attachments */
   body: string;
   outgoing?: boolean;
+  messageKind?: ChatMessageType;
+  mime?: string;
+  attachmentName?: string;
+  /** file:// or data: URI for image preview */
+  mediaUri?: string;
+  /** Raw base64 for `file` attachments (download / share). */
+  attachmentBase64?: string;
 };
 
 export type ChatConnectionStatus =
