@@ -14,8 +14,8 @@ import {
 import { userImageXX, userImageXY } from "@/assets/images";
 import BottomSheetModal from "@/components/BottomSheetModal";
 import JoinSessionSheetPanel from "@/components/JoinSessionSheetPanel";
-import SessionSheetPanel from "@/components/SessionSheetPanel";
 import PatternBackground from "@/components/PatternBackground";
+import SessionSheetPanel from "@/components/SessionSheetPanel";
 import { useLastChatRouteStore } from "@/store/LastChatRouteStore";
 import { useUserStore } from "@/store/UserStore";
 import { colors, typography } from "@/theme";
@@ -240,24 +240,26 @@ export default function UserScreen() {
             ))}
           </LinearGradient>
 
-          <View style={styles.disconnectButton}>
+          <TouchableOpacity
+            style={styles.disconnectButton}
+            onPress={() => {
+              router.replace("/splash");
+            }}
+          >
             <MaterialCommunityIcons
               name="power"
               size={19}
               color={colors.danger}
             />
             <Text style={styles.disconnectText}>DISCONNECT</Text>
-          </View>
+          </TouchableOpacity>
 
           <Text style={styles.warningText}>
             Warning: Connection termination will purge session memory
           </Text>
         </View>
       </ScrollView>
-      <BottomSheetModal
-        bottomSheetRef={sessionSheetRef}
-        detents={[0.48, 0.78]}
-      >
+      <BottomSheetModal bottomSheetRef={sessionSheetRef} detents={[0.48, 0.78]}>
         <SessionSheetPanel
           onCreateSession={goToChatFromSheet}
           onJoinSession={openJoinSessionSheet}
