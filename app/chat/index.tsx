@@ -33,6 +33,12 @@ import {
   startChatSession,
   stopChatSession,
 } from "@/services/chatSession";
+import {
+  sendBluetoothChatAttachment,
+  sendBluetoothChatMessage,
+  startBluetoothChatSession,
+  stopBluetoothChatSession,
+} from "@/services/chatSessionBluetooth";
 import { useChatE2eStore } from "@/store/ChatE2eStore";
 import type {
   ChatConnectionStatus,
@@ -67,10 +73,10 @@ const COMMAND_SUGGESTIONS = [
 function statusBannerLabel(status: ChatConnectionStatus): string {
   const map: Record<ChatConnectionStatus, string> = {
     idle: "IDLE",
-    signaling: "CONNECTING TO SIGNALING…",
+    signaling: "CONNECTING…",
     waiting: "WAITING FOR PEER (SHARE YOUR USER HASH)",
-    lookup: "LOOKING UP PEER BY HASH…",
-    negotiating: "WEBRTC HANDSHAKE…",
+    lookup: "LOOKING UP PEER…",
+    negotiating: "NEGOTIATING LINK…",
     connected: "ENCRYPTED CHANNEL ESTABLISHED :: [256-BIT AES]",
     error: "SESSION ERROR",
   };
@@ -94,6 +100,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { user } = useUserStore();
+  const isBluetoothMode = user?.uplinkType === "local";
   const messages = useChatSessionStore((s) => s.messages);
   const connectionStatus = useChatSessionStore((s) => s.connectionStatus);
   const errorMessage = useChatSessionStore((s) => s.errorMessage);
@@ -171,16 +178,28 @@ export default function ChatScreen() {
         peerHash ? { role: "join", peerHash } : { role: "host" },
       );
 
-    startChatSession({
-      user: user as User,
-      role: peerHash ? "join" : "host",
-      peerHash,
-    });
+    if (isBluetoothMode) {
+      startBluetoothChatSession({
+        user: user as User,
+        role: peerHash ? "join" : "host",
+        peerHash,
+      });
+    } else {
+      startChatSession({
+        user: user as User,
+        role: peerHash ? "join" : "host",
+        peerHash,
+      });
+    }
 
     return () => {
-      stopChatSession();
+      if (isBluetoothMode) {
+        stopBluetoothChatSession();
+      } else {
+        stopChatSession();
+      }
     };
-  }, [user?.userId, user?.userHash, params.peerHash, params.role]);
+  }, [isBluetoothMode, params.peerHash, params.role, user?.userHash, user?.userId]);
 
   React.useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -288,7 +307,10 @@ export default function ChatScreen() {
       const name =
         asset.fileName ?? `image_${Date.now()}.${ext}`;
 
-      sendChatAttachment({
+      const sendAttachment = isBluetoothMode
+        ? sendBluetoothChatAttachment
+        : sendChatAttachment;
+      sendAttachment({
         kind: "image",
         mime,
         name,
@@ -298,7 +320,7 @@ export default function ChatScreen() {
     } catch {
       appendSystem("Image picker failed.");
     }
-  }, [appendSystem]);
+  }, [appendSystem, isBluetoothMode]);
 
   const pickAndSendFile = React.useCallback(async () => {
     try {
@@ -312,7 +334,10 @@ export default function ChatScreen() {
       const b64 = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: "base64",
       });
-      sendChatAttachment({
+      const sendAttachment = isBluetoothMode
+        ? sendBluetoothChatAttachment
+        : sendChatAttachment;
+      sendAttachment({
         kind: "file",
         mime: asset.mimeType ?? "application/octet-stream",
         name: asset.name || "file",
@@ -321,7 +346,7 @@ export default function ChatScreen() {
     } catch {
       appendSystem("File picker failed.");
     }
-  }, [appendSystem]);
+  }, [appendSystem, isBluetoothMode]);
 
   const sendFromInput = React.useCallback(() => {
     const trimmed = messageInput.trim();
@@ -340,10 +365,18 @@ export default function ChatScreen() {
     }
 
     if (trimmed.toLowerCase() === "/disconnect") {
-      sendChatMessage(trimmed);
+      if (isBluetoothMode) {
+        sendBluetoothChatMessage(trimmed);
+      } else {
+        sendChatMessage(trimmed);
+      }
       setMessageInput("");
       setTimeout(() => {
-        stopChatSession();
+        if (isBluetoothMode) {
+          stopBluetoothChatSession();
+        } else {
+          stopChatSession();
+        }
         useLastChatRouteStore.getState().setLastChatRoute(null);
         useChatE2eStore.getState().clearKey();
         router.replace("/splash");
@@ -353,10 +386,14 @@ export default function ChatScreen() {
       return;
     }
 
-    sendChatMessage(messageInput);
+    if (isBluetoothMode) {
+      sendBluetoothChatMessage(messageInput);
+    } else {
+      sendChatMessage(messageInput);
+    }
     setMessageInput("");
     Keyboard.dismiss();
-  }, [messageInput, pickAndSendFile, pickAndSendImage]);
+  }, [isBluetoothMode, messageInput, pickAndSendFile, pickAndSendImage]);
 
   const keyboardGap = 20;
   const composerBottomGap =
