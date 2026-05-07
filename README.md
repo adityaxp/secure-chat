@@ -30,7 +30,7 @@ npx expo start
 ```
 
 > Expo Go not supported
-> as BLE and WebRTC use native modules require a **custom dev build**. Use `expo-prebuild` or `eas-cli` to build.
+> as BLE and WebRTC use native modules make a **custom dev build**. Use `expo-prebuild` or `eas-cli` to build.
 
 Build and run on device/emulator:
 
@@ -73,7 +73,5 @@ Check out <a href="https://github.com/adityaxp/secure-chat-signaling">secure-cha
 - `services/chatSession.ts` - internet/WebRTC session logic
 - `services/chatSessionBluetooth.ts` - BLE session logic
 - `store/` - Zustand stores for user/chat/session state
-
---
 
 https://github.com/user-attachments/assets/83a42df7-dcc9-4f61-8e12-1503a1e8ddd3
