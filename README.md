@@ -13,9 +13,6 @@ Supports two uplink modes:
 npm install
 ```
 
-> Expo Go no supported
-> BLE and WebRTC native modules require a **custom dev build**. Use `expo-prebuild` or `eas-cli` to build.
-
 Create `.env` in project root:
 
 ```env
@@ -28,18 +25,19 @@ The app reads either variable from `services/env.ts`.
 
 ## Run
 
-Start Metro:
-
 ```bash
-npm run start
+npx expo start
 ```
+
+> Expo Go not supported
+> as BLE and WebRTC use native modules require a **custom dev build**. Use `expo-prebuild` or `eas-cli` to build.
 
 Build and run on device/emulator:
 
 ```bash
-npm run android
+npx expo run:android
 # or
-npm run ios
+npx expo run:ios
 ```
 
 Run lint:
@@ -64,13 +62,10 @@ Check out <a href="https://github.com/adityaxp/secure-chat-signaling">secure-cha
 
 ## Project Scripts
 
-- `npm run start` - start Metro
 - `npm run android` - build + run Android
 - `npm run ios` - build + run iOS
 - `npm run web` - web preview (limited for native features)
 - `npm run lint` - lint project
-
----
 
 ## Folder structure
 
@@ -79,4 +74,6 @@ Check out <a href="https://github.com/adityaxp/secure-chat-signaling">secure-cha
 - `services/chatSessionBluetooth.ts` - BLE session logic
 - `store/` - Zustand stores for user/chat/session state
 
----
+--
+
+https://github.com/user-attachments/assets/83a42df7-dcc9-4f61-8e12-1503a1e8ddd3
