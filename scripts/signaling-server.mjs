@@ -22,14 +22,10 @@ const hashToUserId = new Map();
 const userIdToHash = new Map();
 
 function normalizeHash(h) {
-  let s = String(h ?? "")
+  return String(h ?? "")
     .replace(/^0x/i, "")
     .replace(/\s/g, "")
     .toLowerCase();
-  if (/^\d+$/.test(s) && s.length >= 1 && s.length <= 3) {
-    s = s.padStart(3, "0");
-  }
-  return s;
 }
 
 function send(ws, obj) {
