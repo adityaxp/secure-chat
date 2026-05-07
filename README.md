@@ -1,4 +1,4 @@
-# secure Chat
+# secure-chat
 
 P2P chat app built with Expo + React Native.
 
@@ -7,17 +7,14 @@ Supports two uplink modes:
 - **Online chat**: peer discovery/signaling over WebSocket + P2P data channel
 - **Local chat**: Bluetooth Low Energy (BLE) chat using `react-native-ble-plx`
 
----
-
-> BLE and WebRTC native modules require a **custom dev build** rather than Expo Go.
-
----
-
 ## Setup
 
 ```bash
 npm install
 ```
+
+> Expo Go no supported
+> BLE and WebRTC native modules require a **custom dev build**. Use `expo-prebuild` or `eas-cli` to build.
 
 Create `.env` in project root:
 
@@ -28,8 +25,6 @@ EXPO_PUBLIC_SIGNALING_URL=ws://<your-ip>:8080
 ```
 
 The app reads either variable from `services/env.ts`.
-
----
 
 ## Run
 
@@ -53,13 +48,9 @@ Run lint:
 npm run lint
 ```
 
----
-
 ## Signaling Server
 
 Check out <a href="https://github.com/adityaxp/secure-chat-signaling">secure-chat-signaling</a>
-
----
 
 ## BLE Notes
 
@@ -70,8 +61,6 @@ Check out <a href="https://github.com/adityaxp/secure-chat-signaling">secure-cha
   - `CHAT_SERVICE_UUID`
   - `CHAT_TX_CHAR_UUID`
   - `CHAT_RX_CHAR_UUID`
-
----
 
 ## Project Scripts
 
